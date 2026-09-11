@@ -59,7 +59,7 @@ static int spk_vol = 80;                 /* 播放软件音量% */
 static float spk_scale = 0.8f;
 
 /* 播放队列(有界,防抖) */
-#define QMAX 8
+#define QMAX 3                 /* 播放队列上限(60ms):对讲低延迟优先,攒帧会放大延迟,丢帧可接受 */
 static short qbuf[QMAX][FRAME];
 static int qn = 0;
 static pthread_mutex_t qmtx = PTHREAD_MUTEX_INITIALIZER;
@@ -186,6 +186,9 @@ static int config_pcm(snd_pcm_t *p, int channels) {
     snd_pcm_hw_params_set_rate_near(p, hp, &rate, 0);
     snd_pcm_uframes_t per = FRAME;
     snd_pcm_hw_params_set_period_size_near(p, hp, &per, 0);
+    /* buffer 收紧到 2 个 period(40ms):默认 buffer 可达 60ms+,对讲延迟大 */
+    snd_pcm_uframes_t buf = per * 2;
+    snd_pcm_hw_params_set_buffer_size_near(p, hp, &buf);
     return snd_pcm_hw_params(p, hp);
 }
 
