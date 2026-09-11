@@ -37,15 +37,17 @@ export PATH="/usr/bin:/bin:$TC_DIR/bin:$PATH"
 CROSS="arm-openipc-linux-gnueabihf-"
 "$CROSS"gcc --version | head -1
 
-# ---------------- 2. alsa-lib(静态) ----------------
-if [ ! -f "$STAGE/usr/lib/libasound.a" ]; then
-  echo "==> 编译 alsa-lib $ALSA_VER (静态) ..."
+# ---------------- 2. alsa-lib(动态, 供 audio_bridge 运行时 dlopen) ----------------
+# 注意: 完全静态链接的 ALSA 程序 dlopen 机制不可用(snd_dlobj 找不到内建符号),
+#       必须动态链接 libasound.so.2(设备 SD 卡 audio/lib/ 已有), 与 build_snd.sh 一致
+if [ ! -f "$STAGE/usr/lib/libasound.so" ]; then
+  echo "==> 编译 alsa-lib $ALSA_VER (共享库) ..."
   cd "$WORK"
   wget -q "$ALSA_LIB_URL" -O alsa-lib.tar.bz2
   tar -xjf alsa-lib.tar.bz2
   cd alsa-lib-${ALSA_VER}
   ./configure --host="${CROSS%-}" --prefix="$STAGE/usr" \
-    --enable-static --disable-shared --with-pic >/dev/null
+    --enable-shared --disable-static >/dev/null
   make -j"$(nproc)" >/dev/null && make install >/dev/null
 fi
 
@@ -63,13 +65,18 @@ if [ ! -f "$STAGE/usr/lib/libopus.a" ]; then
 fi
 
 # ---------------- 4. 编译 audio_bridge ----------------
-echo "==> 编译 audio_bridge(静态) ..."
+echo "==> 编译 audio_bridge(动态链 libasound, opus 静态) ..."
 cd "$ROOT/audio"   # 前几步已 cd 到 work/, 必须回到仓库内 audio/ 再编
-"$CROSS"gcc -O2 -static \
+"$CROSS"gcc -O2 \
   -I"$STAGE/usr/include" -I"$STAGE/usr/include/opus" \
   audio_bridge.c \
-  -L"$STAGE/usr/lib" -lasound -lopus -lpthread -lm \
+  -L"$STAGE/usr/lib" -lasound "$STAGE/usr/lib/libopus.a" -lpthread -lm \
   -o "$DIST/audio_bridge"
+
+# 打包 libasound 共享库(设备 SD 卡 audio/lib/, 与 build_snd.sh 产物同源)
+mkdir -p "$DIST/lib"
+cp -L "$STAGE/usr/lib"/libasound.so* "$DIST/lib/" 2>/dev/null || true
+echo "==> 打包 libasound -> $DIST/lib/"
 
 echo "==> 产物:"
 file "$DIST/audio_bridge"
