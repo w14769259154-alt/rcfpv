@@ -73,7 +73,7 @@ echo "==> modules (只编 =m 的音频相关) ..."
 make ARCH=arm CROSS_COMPILE="$CROSS" modules -j"$(nproc)"
 
 echo "==> 收集 .ko ..."
-KO_LIST="soundcore.ko snd.ko snd-timer.ko snd-pcm.ko snd-hwdep.ko snd-rawmidi.ko snd-usb-audio.ko"
+KO_LIST="soundcore.ko snd.ko snd-timer.ko snd-pcm.ko snd-hwdep.ko snd-rawmidi.ko snd-usbmidi-lib.ko snd-usb-audio.ko"
 for k in $KO_LIST; do
   f=$(find "$KSRC/sound" -name "$k" | head -1)
   if [ -n "$f" ]; then cp "$f" "$DIST/"; echo "  + $k"; else echo "  !! 缺少 $k"; fi

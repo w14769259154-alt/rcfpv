@@ -8,7 +8,7 @@
 # ============================================================
 
 AUD_DIR=/mnt/mmcblk0p1/5gipc/audio
-MODULES="soundcore snd snd-timer snd-pcm snd-hwdep snd-rawmidi snd-usb-audio"
+MODULES="soundcore snd snd-timer snd-pcm snd-hwdep snd-rawmidi snd-usbmidi-lib snd-usb-audio"
 
 start() {
   # 幂等: 已加载则跳过
