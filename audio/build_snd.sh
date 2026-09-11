@@ -7,7 +7,7 @@
 # ============================================================
 set -euo pipefail
 
-DIST="$(pwd)/dist"
+DIST="$(pwd)/audio/dist"   # 与 workflow upload-artifact path: audio/dist/ 保持一致
 WORK="$(pwd)/work"
 TC_DIR="$WORK/toolchain"
 KSRC="$WORK/linux"
