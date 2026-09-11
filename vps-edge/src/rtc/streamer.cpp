@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <iostream>
+#include <sstream>
 
 namespace rcfpv {
 
@@ -285,12 +286,31 @@ void WebRtcStreamer::createOfferForViewer(const std::string &viewerId) {
     }
 }
 
+// libdatachannel v0.24.5 SDP 解析器无法处理 a= 行中 payload type 为通配符 "*"
+// 的字段(如浏览器 answer 常见 a=rtcp-fb:* nack / a=rtcp-fb:* transport-cc),
+// 会抛 "Invalid integer \"*\" in description" 导致 answer 设置失败、
+// 后续 candidate 全部 "without remote description"、track 永不打开。
+// 这些行仅表达对端回传反馈偏好,接收方(edge)可安全忽略,直接剔除。
+static std::string sanitizeAnswerSdp(const std::string &sdp) {
+    std::istringstream ss(sdp);
+    std::string line, out;
+    while (std::getline(ss, line)) {
+        if (line.rfind("a=", 0) == 0 && line.find('*') != std::string::npos) {
+            std::cout << "[webrtc] 剔除 answer 中带 * 的 a= 行: "
+                      << line.substr(0, 80) << std::endl;
+            continue;
+        }
+        out += line + "\n";
+    }
+    return out;
+}
+
 void WebRtcStreamer::handleAnswer(const std::string &viewerId, const std::string &sdp) {
     std::lock_guard<std::mutex> lk(mutex_);
     auto v = getViewer(viewerId);
     if (!v) return;
     try {
-        v->pc->setRemoteDescription(rtc::Description(sdp, "answer"));
+        v->pc->setRemoteDescription(rtc::Description(sanitizeAnswerSdp(sdp), "answer"));
         std::cout << "[webrtc] answer 已设置: " << viewerId << std::endl;
     } catch (const std::exception &e) {
         std::cerr << "[webrtc] 设置 answer 失败: " << e.what() << std::endl;
