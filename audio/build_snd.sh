@@ -80,17 +80,18 @@ for k in $KO_LIST; do
   if [ -n "$f" ]; then cp "$f" "$DIST/"; echo "  + $k"; else echo "  !! 缺少 $k"; fi
 done
 
-# ---------------- 5. 交叉编译静态 arecord ----------------
-echo "==> 编译 alsa-lib (静态) ..."
+# ---------------- 5. 交叉编译动态 arecord (设备是 glibc armhf, 与工具链匹配) ----------------
+# 说明: 完全静态链接时 ALSA 库的插件加载(dlopen)机制不可用, 必须动态链接 libasound
+echo "==> 编译 alsa-lib (共享库) ..."
 cd "$WORK"
 wget -q "$ALSA_LIB_URL" -O alsa-lib.tbz2
 tar -xjf alsa-lib.tbz2
 cd alsa-lib-${ALSA_VER}
 ./configure --host="${CROSS%-}" --prefix="$STAGE/usr" \
-  --enable-static --disable-shared --with-pic >/dev/null
+  --enable-shared --disable-static >/dev/null
 make -j"$(nproc)" >/dev/null && make install >/dev/null
 
-echo "==> 编译 alsa-utils (仅 aplay/arecord, 静态) ..."
+echo "==> 编译 alsa-utils (仅 aplay/arecord, 动态) ..."
 cd "$WORK"
 wget -q "$ALSA_UTILS_URL" -O alsa-utils.tbz2
 tar -xjf alsa-utils.tbz2
@@ -102,23 +103,25 @@ export PKG_CONFIG_PATH="$STAGE/usr/lib/pkgconfig"
   --disable-speaker-test --disable-bat --disable-xmlto --disable-nls \
   --disable-alsatplg --disable-topology \
   --with-alsa-inc-prefix="$STAGE/usr/include" \
-  --with-alsa-prefix="$STAGE/usr/lib" \
-  LDFLAGS="-static -Wl,--export-dynamic" \
-  LIBS="-ldl -lpthread" >/dev/null
+  --with-alsa-prefix="$STAGE/usr/lib" >/dev/null
 make -j"$(nproc)" >/dev/null || make >/dev/null
 cp aplay/aplay "$DIST/arecord" 2>/dev/null || cp aplay/aplay "$DIST/aplay"
 file "$DIST"/* 2>/dev/null || true
 
-# ---------------- 5.5 打包 ALSA 配置文件 ----------------
-# 静态 arecord 运行时仍要读 alsa.conf(定义 plughw 等插件); 设备上设
-#   export ALSA_CONFIG_PATH=$AUD_DIR/alsa/alsa.conf  ALSA_CONFIG_DIR=$AUD_DIR/alsa
+# ---------------- 5.5 打包 ALSA 配置文件 + 共享库 ----------------
+# 设备上设: export ALSA_CONFIG_PATH=$AUD_DIR/alsa/alsa.conf ALSA_CONFIG_DIR=$AUD_DIR/alsa
+#           export LD_LIBRARY_PATH=$AUD_DIR/lib:$LD_LIBRARY_PATH
 if [ -d "$STAGE/usr/share/alsa" ]; then
   mkdir -p "$DIST/alsa"
   cp -r "$STAGE/usr/share/alsa/." "$DIST/alsa/"
-  # 完整 alsa.conf 的 @hooks 需要 dlopen 动态库, 静态 arecord 用不了 -> 换精简配置
+  # 完整 alsa.conf 的 @hooks 需要 dlopen 动态库; 精简版避免(仅保留 hw/plughw/default)
   cp "$ROOT/audio/alsa.min.conf" "$DIST/alsa/alsa.conf"
   echo "==> 打包 ALSA 配置(精简版) -> $DIST/alsa/"
 fi
+mkdir -p "$DIST/lib"
+cp -L "$STAGE/usr/lib"/libasound.so* "$DIST/lib/" 2>/dev/null || true
+echo "==> 打包 libasound -> $DIST/lib/"
+ls -la "$DIST/lib" 2>/dev/null || true
 
 # ---------------- 6. 版本信息/vermagic 校验 ----------------
 echo "==> 模块 vermagic(需与设备 insmod 报错对比) ..."
