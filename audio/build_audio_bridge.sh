@@ -7,7 +7,8 @@
 # ============================================================
 set -euo pipefail
 
-DIST="$(pwd)/dist"
+DIST="$(pwd)/audio/dist"   # 与 workflow upload path: audio/dist/audio_bridge 一致
+ROOT="$(pwd)"              # 仓库根(脚本会 cd, 引用仓库内文件用绝对路径)
 WORK="$(pwd)/work"
 TC_DIR="$WORK/toolchain"
 STAGE="$WORK/stage"
@@ -63,7 +64,7 @@ fi
 
 # ---------------- 4. 编译 audio_bridge ----------------
 echo "==> 编译 audio_bridge(静态) ..."
-cd "$(dirname "$0")"
+cd "$ROOT/audio"   # 前几步已 cd 到 work/, 必须回到仓库内 audio/ 再编
 "$CROSS"gcc -O2 -static \
   -I"$STAGE/usr/include" -I"$STAGE/usr/include/opus" \
   audio_bridge.c \
