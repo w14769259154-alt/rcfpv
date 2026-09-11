@@ -71,14 +71,11 @@ if [ ! -f "$WORK/libdatachannel/build/libdatachannel.a" ]; then
   cd "$WORK/libdatachannel"
   cmake -B build \
     -DCMAKE_TOOLCHAIN_FILE="$TC_FILE" \
+    -DCMAKE_PREFIX_PATH="$STAGE" \
     -DBUILD_SHARED_LIBS=OFF \
-    -DUSE_MBEDTLS=ON -DUSE_SYSTEM_MBEDTLS=OFF \
+    -DUSE_MBEDTLS=ON \
     -DNO_EXAMPLES=ON -DNO_TESTS=ON \
-    -DMBEDTLS_INCLUDE_DIR="$STAGE/include" \
-    -DMBEDTLS_LIBRARY="$STAGE/lib/libmbedtls.a" \
-    -DMBEDTLS_X509_LIBRARY="$STAGE/lib/libmbedx509.a" \
-    -DMBEDTLS_CRYPTO_LIBRARY="$STAGE/lib/libmbedcrypto.a" \
-    -DCMAKE_BUILD_TYPE=Release >/dev/null
+    -DCMAKE_BUILD_TYPE=Release
   cmake --build build -j"$(nproc)"
 fi
 
