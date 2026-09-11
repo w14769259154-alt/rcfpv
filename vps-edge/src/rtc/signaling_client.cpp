@@ -146,7 +146,6 @@ bool SignalingClient::sendJson(const std::string &jsonStr) {
 }
 
 void SignalingClient::runReconnectLoop() {
-    int joinTicks = 0;
     while (!stopping_) {
         // 3s 间隔:1s 会造成重连风暴(每秒新建连接覆盖旧的)
         std::this_thread::sleep_for(std::chrono::seconds(3));
@@ -157,20 +156,11 @@ void SignalingClient::runReconnectLoop() {
         if (!connected_) {
             std::cout << "[signaling] 自动重连..." << std::endl;
             connect();
-        } else if (++joinTicks >= 10) {
-            // 每 30s 重发 join(幂等):防服务端因心跳/超时把本连接从房间条目移除
-            // 但 TCP 仍存活(客户端 onClosed 未触发)导致收不到 viewer_ready 的复发场景
-            joinTicks = 0;
-            std::lock_guard<std::mutex> lk(wsMutex_);
-            if (ws_ && ws_->isOpen()) {
-                json join = {{"type", "join"},
-                             {"room", cfg_.roomId},
-                             {"role", "broadcaster"},
-                             {"id", cfg_.clientId}};
-                ws_->send(join.dump());
-                std::cout << "[signaling] 保活重发 join: " << cfg_.roomId << std::endl;
-            }
         }
+        // 注意:不再周期重发 join——信令服务器对 join 会向房间广播 peer_joined,
+        // 地面站收到后触发重连(viewer 重复接入/移除循环),进而拖垮 edge(ABRT)。
+        // 连接活性由 WebSocket ping/pong 保活(pingInterval/maxOutstandingPings)保障,
+        // 服务端移除条目但 TCP 存活时,下次 viewer join 会重新触发本端 createOffer。
     }
 }
 
