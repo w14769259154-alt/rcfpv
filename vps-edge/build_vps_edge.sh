@@ -6,7 +6,7 @@
 # ============================================================
 set -euo pipefail
 
-DIST="$(pwd)/dist"
+DIST="$(pwd)/vps-edge/dist"   # 与 workflow upload path: vps-edge/dist/rcfpv-edge 一致
 WORK="$(pwd)/work"
 SRC="$(cd "$(dirname "$0")" && pwd)"
 
@@ -26,8 +26,13 @@ cp "$SRC/CMakeLists.txt" "$WORK/edge-src/"
 
 echo "==> 编译 ..."
 cd "$WORK/edge-src"
-cmake -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j"$(nproc)"
+# 日志重定向: 编译输出几十万行会被 GitHub 截断, 失败时只 tail 出错误尾部
+if ! cmake -B build -DCMAKE_BUILD_TYPE=Release > "$WORK/cmake.log" 2>&1; then
+  echo "!! cmake 配置失败, 尾部日志:"; tail -60 "$WORK/cmake.log"; exit 1
+fi
+if ! cmake --build build -j"$(nproc)" > "$WORK/build.log" 2>&1; then
+  echo "!! 编译失败, 尾部日志:"; tail -80 "$WORK/build.log"; exit 1
+fi
 
 cp build/rcfpv-edge "$DIST/"
 echo "==> 产物: $DIST/rcfpv-edge"
