@@ -94,7 +94,8 @@ cd "$WORK"
 wget -q "$ALSA_UTILS_URL" -O alsa-utils.tgz
 tar -xzf alsa-utils.tgz
 cd alsa-utils-${ALSA_VER}
-/usr/bin/autoreconf -fi         # 同上, 用系统 autoconf 生成 configure
+# AM_PATH_ALSA 宏在 alsa-lib 源码 m4/ 目录, 需 -I 传给 aclocal, 否则 autoreconf 报 undefined macro
+/usr/bin/autoreconf -fi -I "$WORK/alsa-lib-${ALSA_VER}/m4"
 export PKG_CONFIG_PATH="$STAGE/usr/lib/pkgconfig"
 ./configure --host="${CROSS%-}" --prefix="$STAGE/usr" \
   --disable-alsaconf --disable-alsactl --disable-alsaloop \
