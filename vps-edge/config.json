@@ -1,0 +1,58 @@
+{
+  "rtsp": {
+    "url": "rtsp://admin:CHANGE_ME@10.55.0.2:554/stream=0",
+    "url2": "rtsp://admin:CHANGE_ME@10.55.0.3:554/stream=0",
+    "codec": "H265",
+    "transport": "tcp",
+    "buffer_size": 212992
+  },
+  "rtsp_out": { "enabled": false },
+  "webrtc": {
+    "video_ssrc": 42,
+    "audio_ssrc": 43,
+    "aux_video_ssrc": 44,
+    "video_payload_type": 96,
+    "audio_payload_type": 111,
+    "max_bitrate": 4000000,
+    "stun_servers": ["stun:182.92.77.180:3478"],
+    "turn_servers": [
+      {
+        "hostname": "182.92.77.180",
+        "port": 3478,
+        "username": "rcfpv",
+        "credential": "CHANGE_ME",
+        "transport": "udp"
+      }
+    ]
+  },
+  "signaling": {
+    "server_url": "wss://182.92.77.180:8443/signaling",
+    "room_id": "rcfpv5-rc",
+    "client_id": "vps-edge",
+    "disable_tls_verify": true
+  },
+  "mavlink": {
+    "connection": "udp",
+    "fc_listen_port": 7212,
+    "fc_target_ip": "10.55.0.2",
+    "fc_target_port": 5760,
+    "system_id": 255,
+    "component_id": 1,
+    "heartbeat_rate_hz": 1.0,
+    "forward_targets": [],
+    "gcs_listen_port": 14550
+  },
+  "gcs_video": { "enabled": false },
+  "audio": {
+    "input_device": "",
+    "output_device": "",
+    "sample_rate": 48000,
+    "channels": 1,
+    "frame_size": 960,
+    "mic_gain": 1.0,
+    "mic_hw_volume": 60,
+    "bridge_listen_port": 7213,
+    "bridge_camera_ip": "10.55.0.2",
+    "bridge_camera_port": 7214
+  }
+}

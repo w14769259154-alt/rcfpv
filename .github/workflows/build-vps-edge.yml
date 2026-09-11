@@ -1,0 +1,37 @@
+name: build-vps-edge
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+    paths: [ 'vps-edge/**', '.github/workflows/build-vps-edge.yml' ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq \
+            build-essential cmake pkg-config git \
+            libavformat-dev libavcodec-dev libavutil-dev \
+            libssl-dev nlohmann-json3-dev dos2unix
+
+      - name: Normalize line endings
+        run: |
+          dos2unix vps-edge/build_vps_edge.sh vps-edge/deploy_vps.sh
+          chmod +x vps-edge/build_vps_edge.sh
+
+      - name: Build vps-edge
+        run: bash vps-edge/build_vps_edge.sh
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: vps-edge-bin
+          path: vps-edge/dist/rcfpv-edge
+          if-no-files-found: error
