@@ -18,7 +18,8 @@ mkdir -p "$DIST" "$WORK" "$TC_DIR" "$KSRC" "$STAGE"
 # ---------------- 0. 关键变量 ----------------
 KERNEL_TAG="sigmastar-infinity6e"                       # openipc/linux 分支(与固件 4.9.84 对应)
 TOOLCHAIN_URL="https://github.com/openipc/firmware/releases/download/toolchain/toolchain.sigmastar-infinity6e.tgz"
-KERNEL_URL="https://github.com/openipc/linux/archive/refs/tags/${KERNEL_TAG}.tar.gz"
+# 注意: sigmastar-infinity6e 是 分支(branch) 不是 tag, 必须用 refs/heads/ 下载
+KERNEL_URL="https://github.com/openipc/linux/archive/refs/heads/${KERNEL_TAG}.tar.gz"
 CONFIG_URL="https://raw.githubusercontent.com/OpenIPC/firmware/master/br-ext-chip-sigmastar/board/infinity6e/infinity6e-ssc012b.config"
 ALSA_VER="1.2.11"
 ALSA_LIB_URL="https://github.com/alsa-project/alsa-lib/archive/refs/tags/v${ALSA_VER}.tar.gz"
