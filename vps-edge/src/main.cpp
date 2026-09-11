@@ -12,6 +12,7 @@
 #include "core/config.h"
 #include "mavlink/bridge.h"
 #include "media/rtsp_capture.h"
+#include "media/status_listener.h"
 #include "media/udp_audio_bridge.h"
 #include "rtc/signaling_client.h"
 #include "rtc/streamer.h"
@@ -60,6 +61,13 @@ int main(int argc, char *argv[]) {
     auto rtspAux = std::make_unique<rcfpv::RtspCapture>(config.rtsp.url2, config.rtsp.transport,
                                                         config.rtsp.bufferSize, config.rtsp.codec);
     auto mavlink = std::make_unique<rcfpv::MavlinkBridge>(config.mavlink);
+
+    // ---- 摄像头板载状态监听(设备 5gipc-status 脚本 TCP 上报 → OSD 板载状态) ----
+    std::unique_ptr<rcfpv::StatusListener> statusListener;
+    if (config.status.enabled) {
+        statusListener = std::make_unique<rcfpv::StatusListener>(config.status.listenPort);
+        mavlink->setDeviceStatusSource([&statusListener] { return statusListener->latest(); });
+    }
 
     // ---- 音频桥(摄像头侧 USB 声卡编解码,本侧仅 UDP 透传) ----
     std::unique_ptr<rcfpv::UdpAudioBridge> audioBridge;
@@ -229,6 +237,11 @@ int main(int argc, char *argv[]) {
             std::cerr << "[main] 音频桥启动失败" << std::endl;
     }
 
+    if (statusListener) {
+        if (!statusListener->start())
+            std::cerr << "[main] 设备状态监听启动失败" << std::endl;
+    }
+
     std::cout << "[main] 启动 MAVLink 桥(UDP :" << config.mavlink.fcListenPort << ")..." << std::endl;
     if (!mavlink->start())
         std::cerr << "[main] MAVLink 桥启动失败" << std::endl;
@@ -256,6 +269,7 @@ int main(int argc, char *argv[]) {
     std::cout << "[main] 正在关闭..." << std::endl;
     signaling->disconnect();
     if (audioBridge) audioBridge->stop();
+    if (statusListener) statusListener->stop();
     rtsp->stop();
     mavlink->stop();
     streamer.reset();

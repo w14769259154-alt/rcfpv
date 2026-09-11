@@ -143,6 +143,12 @@ Config loadConfig(const std::string &path) {
         cfg.audio.bridgeCameraPort = getOr<int>(j, "bridge_camera_port", cfg.audio.bridgeCameraPort);
     }
     // VPS 版:无本地 ALSA,音频是否启用由"音频桥端口 > 0"决定(input_device 可为空)
+
+    if (root.contains("status")) {
+        const auto &j = root.at("status");
+        cfg.status.enabled = getOr<bool>(j, "enabled", cfg.status.enabled);
+        cfg.status.listenPort = getOr<int>(j, "listen_port", cfg.status.listenPort);
+    }
     cfg.audio.enabled = !cfg.audio.inputDevice.empty() || cfg.audio.bridgeListenPort > 0;
 
     return cfg;

@@ -15,6 +15,7 @@
 #pragma once
 
 #include "core/config.h"
+#include "media/status_listener.h" // DeviceStatus(设备板载状态)
 #include <ardupilotmega/mavlink.h> // mavlink_message_t(handleTelemetry 签名)
 
 #include <atomic>
@@ -61,6 +62,10 @@ public:
     // 从未调用过则视为始终有活动(兼容未接入的调用方,行为与旧版一致)
     void noteViewerActivity();
 
+    // 设备板载状态源(StatusListener::latest)。OSD 板载状态优先用设备值
+    // (新鲜≤6s),超时/未设置时回退 VPS 自身采集
+    void setDeviceStatusSource(std::function<DeviceStatus()> src);
+
 private:
     // transport 抽象:Udp(socket+recvfrom)或 Serial(串口 read/write)
     // gcsFd_(14550 GCS 直连)与 transport 无关,始终保留作为飞控↔GCS 桥接 UDP 出口
@@ -105,6 +110,7 @@ private:
 
     MavlinkConfig cfg_;
     TelemetryCallback telemetryCb_;
+    std::function<DeviceStatus()> deviceStatusSrc_; // 设备板载状态源(可为空)
 
     int fd_ = -1;
     Transport transport_ = Transport::Udp; // 当前 FC transport(openFcTransport 按此分支)

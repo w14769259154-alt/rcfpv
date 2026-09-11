@@ -747,8 +747,25 @@ void MavlinkBridge::persistForwardTargets() const {
 // 使用官方 mavlink_msg_xxx_decode() 解码,自动处理 packed 对齐 + v2 扩展字段截断
 // (旧代码用 memcpy + sizeof 检查,在此平台 packed 未生效导致 sizeof 偏大,多数消息被误丢)
 
-// 板载状态采集(OSD 显示:CPU 温度/负载/内存/网速/运行时间)。2s 限频读一次 /proc,降低开销。
-static void appendBoardStatus(json &j) {
+// 板载状态采集(OSD 显示:CPU 温度/负载/内存/网速/运行时间)。
+// dev 为设备(OpenIPC 摄像头)上报值且新鲜(≤6s)时优先使用——这才是用户
+// 关心的"板载";否则回退 VPS 自身 /proc 采集(2s 限频,降低开销)。
+static void appendBoardStatus(json &j, const DeviceStatus *dev) {
+    const auto now = std::chrono::steady_clock::now();
+    const bool devFresh = dev && dev->fresh &&
+        std::chrono::duration_cast<std::chrono::seconds>(now - dev->updated).count() <= 6;
+    if (devFresh) {
+        // 设备无温度节点时 temp=0,省略该字段(前端不显示温度)
+        if (dev->temp > 0) j["board_temp"] = dev->temp;
+        j["cpu_load"] = dev->load;
+        j["mem_pct"] = dev->memPct;
+        if (dev->diskPct >= 0) j["disk_pct"] = dev->diskPct;
+        j["uptime_s"] = dev->uptimeS;
+        j["rx_kbps"] = dev->rxKbps;
+        j["tx_kbps"] = dev->txKbps;
+        return;
+    }
+
     static std::chrono::steady_clock::time_point lastRead{};
     static float temp = 0, load = 0;
     static int mem = 0;
@@ -756,7 +773,6 @@ static void appendBoardStatus(json &j) {
     static float rxKbps = 0, txKbps = 0;
     static uint64_t lastRxBytes = 0, lastTxBytes = 0;
     static bool haveNetSample = false;
-    auto now = std::chrono::steady_clock::now();
     const bool first = lastRead.time_since_epoch().count() == 0;
     if (first || std::chrono::duration_cast<std::chrono::seconds>(now - lastRead).count() >= 2) {
         auto dt = first ? 2.0f
@@ -1006,8 +1022,12 @@ void MavlinkBridge::handleTelemetry(const mavlink_message_t *msg) {
         return; // 未订阅的消息不转发
     }
 
-    appendBoardStatus(j); // 追加板载状态(OSD 显示)
+    appendBoardStatus(j, deviceStatusSrc_ ? &deviceStatusSrc_() : nullptr); // 追加板载状态(OSD 显示)
     telemetryCb_(j.dump());
+}
+
+void MavlinkBridge::setDeviceStatusSource(std::function<DeviceStatus()> src) {
+    deviceStatusSrc_ = std::move(src);
 }
 
 // ---- 上行命令(JSON → MAVLink 帧) ----

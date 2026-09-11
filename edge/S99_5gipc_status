@@ -1,0 +1,57 @@
+#!/bin/sh
+# 5gipc-rc 板载状态上报开机自启(OpenIPC busybox ash)
+### BEGIN INIT INFO
+# Provides:          5gipc-status
+### END INIT INFO
+
+STATUS_BIN=/usr/bin/5gipc-status.sh
+PIDFILE=/var/run/5gipc/status.pid
+
+alive() {
+    [ -f "$1" ] || return 1
+    p=$(cat "$1" 2>/dev/null)
+    [ -n "$p" ] && [ -d "/proc/$p" ] && return 0
+    return 1
+}
+
+case "$1" in
+    start)
+        if alive "$PIDFILE"; then
+            echo "5gipc-status 已运行(pid=$(cat $PIDFILE))"
+            exit 0
+        fi
+        mkdir -p /var/run/5gipc
+        setsid "$STATUS_BIN" >/dev/null 2>&1 &
+        echo $! > "$PIDFILE"
+        sleep 1
+        alive "$PIDFILE" && echo "5gipc-status 已启动(pid=$(cat $PIDFILE))" \
+            || echo "启动失败,查脚本是否可执行"
+        ;;
+    stop)
+        if alive "$PIDFILE"; then
+            kill "$(cat "$PIDFILE")" 2>/dev/null
+            rm -f "$PIDFILE"
+        fi
+        # 兜底:按命令行匹配(pkill -x 会因 15 字符截断对不上,且本脚本自身不含该路径)
+        pkill -f "5gipc-status.sh" 2>/dev/null
+        echo "5gipc-status 已停止"
+        ;;
+    restart)
+        "$0" stop
+        sleep 1
+        "$0" start
+        ;;
+    status)
+        if alive "$PIDFILE"; then
+            echo "5gipc-status 运行中(pid=$(cat $PIDFILE))"
+        else
+            echo "5gipc-status 未运行"
+            exit 1
+        fi
+        ;;
+    *)
+        echo "用法: $0 {start|stop|restart|status}"
+        exit 1
+        ;;
+esac
+exit 0

@@ -28,6 +28,7 @@ add_executable(rcfpv-edge
   src/core/config.cpp
   src/media/rtsp_capture.cpp
   src/media/udp_audio_bridge.cpp
+  src/media/status_listener.cpp
   src/mavlink/bridge.cpp
   src/rtc/signaling_client.cpp
   src/rtc/streamer.cpp

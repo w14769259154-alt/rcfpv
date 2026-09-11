@@ -92,6 +92,12 @@ struct AudioConfig {
     int bridgeCameraPort = 7214;      // 摄像头音频桥下行监听(音频帧 + 命令)
 };
 
+// 摄像头板载状态上报监听(设备 5gipc-status 脚本 TCP 上报,OSD 板载状态数据源)
+struct StatusConfig {
+    bool enabled = true;     // 总开关
+    int listenPort = 7215;   // TCP 监听端口(仅 WG 网段来源)
+};
+
 struct Config {
     RtspConfig rtsp;
     RtspOutConfig rtspOut;
@@ -100,6 +106,7 @@ struct Config {
     MavlinkConfig mavlink;
     GcsVideoConfig gcsVideo;
     AudioConfig audio;
+    StatusConfig status;
 };
 
 // 加载 JSON 配置;文件不存在或字段缺失时使用默认值
