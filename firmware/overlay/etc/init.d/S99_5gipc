@@ -1,5 +1,5 @@
 #!/bin/sh
-# 5gipc-rc 主摄服务开机自启(固件内置): mavfwd(经monitor) + audio_bridge + edge(方案2预留)
+# 5gipc-rc 主摄服务开机自启(固件内置, 方案2): mavfwd(经monitor) + edge(WebRTC)
 ### BEGIN INIT INFO
 # Provides:          5gipc
 ### END INIT INFO
@@ -10,7 +10,6 @@ CONF=/etc/5gipc.conf
 MON=/usr/bin/5gipc-monitor
 PIDFILE=/var/run/5gipc/monitor.pid
 MAVPID=/var/run/5gipc/mavfwd.pid
-AUD_PID=/var/run/5gipc/audio_bridge.pid
 EDGE_PID=/var/run/5gipc/edge.pid
 
 alive() {
@@ -18,19 +17,6 @@ alive() {
     p=$(cat "$1" 2>/dev/null)
     [ -n "$p" ] && [ -d "/proc/$p" ] && return 0
     return 1
-}
-
-start_audio() {
-    [ -n "$AUDIO_BRIDGE_BIN" ] && [ -x "$AUDIO_BRIDGE_BIN" ] || return 0
-    if alive "$AUD_PID"; then return 0; fi
-    mkdir -p /var/run/5gipc /tmp/log/5gipc
-    # shellcheck disable=SC2086
-    setsid "$AUDIO_BRIDGE_BIN" $AUDIO_BRIDGE_ARGS \
-        >>/tmp/log/5gipc/audio_bridge.log 2>&1 &
-    echo $! > "$AUD_PID"
-    sleep 1
-    alive "$AUD_PID" && echo "audio_bridge: 已启动" \
-        || echo "audio_bridge: 启动失败(查 audio_bridge.log)"
 }
 
 start_edge() {
@@ -52,17 +38,15 @@ case "$1" in
             setsid "$MON" >/dev/null 2>&1 &
             sleep 1
         fi
-        start_audio
         start_edge
         alive "$PIDFILE" && echo "monitor(数传): 已启动(pid=$(cat $PIDFILE))" \
             || echo "monitor: 启动失败, 查 /tmp/log/5gipc/5gipc.log"
         ;;
     stop)
-        for p in "$EDGE_PID" "$AUD_PID" "$PIDFILE" "$MAVPID"; do
+        for p in "$EDGE_PID" "$PIDFILE" "$MAVPID"; do
             if alive "$p"; then kill "$(cat "$p")" 2>/dev/null; rm -f "$p"; fi
         done
         pkill -x rcfpv-edge 2>/dev/null
-        pkill -x audio_bridge 2>/dev/null
         pkill -x mavfwd 2>/dev/null
         echo "5gipc 已停止"
         ;;
@@ -79,7 +63,6 @@ case "$1" in
         else
             echo "monitor: 未运行"
         fi
-        alive "$AUD_PID" && echo "audio_bridge: 运行中" || echo "audio_bridge: 未运行"
         alive "$EDGE_PID" && echo "edge(方案2): 运行中" || echo "edge(方案2): 未运行"
         ip link show wg0 >/dev/null 2>&1 && echo "wg0: 存在" || echo "wg0: 不存在"
         ;;
