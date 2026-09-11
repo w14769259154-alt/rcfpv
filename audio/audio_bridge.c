@@ -207,7 +207,8 @@ static void jitter_drain(void) {
         }
         /* 缺口:丢包,PLC 隐藏(静音延续) */
         if (plc < PLC_MAX) {
-            short pl[FRAME_MAX * 2];
+            /* static:OpenIPC ulimit -s 8192,函数栈放 11KB 数组会溢出崩溃 */
+            static short pl[FRAME_MAX * 2];
             int n = opus_decode(dec, NULL, 0, pl, FRAME_MAX, 0);
             if (n > 0) {
                 q_enqueue(pl, n);
@@ -398,7 +399,8 @@ int main(int argc, char **argv) {
                         if (off < plen) { p += off; plen -= off; }
                     }
                     if (plen > 0) {
-                        short out[FRAME_MAX * 2];
+                        /* static:OpenIPC ulimit -s 8192,栈上放 11KB 数组会溢出崩溃 */
+                        static short out[FRAME_MAX * 2];
                         int got = opus_decode(dec, p, plen, out, FRAME_MAX, 0);
                         if (got < 0) got = 0;
                         /* 帧内样本不足 20ms(罕见):PLC 补齐到 FRAME,避免播放残留脏数据 */
