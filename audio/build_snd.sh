@@ -102,7 +102,8 @@ export PKG_CONFIG_PATH="$STAGE/usr/lib/pkgconfig"
   --disable-alsatplg --disable-topology \
   --with-alsa-inc-prefix="$STAGE/usr/include" \
   --with-alsa-prefix="$STAGE/usr/lib" \
-  LDFLAGS="-static" >/dev/null
+  LDFLAGS="-static -Wl,--export-dynamic" \
+  LIBS="-ldl -lpthread" >/dev/null
 make -j"$(nproc)" >/dev/null || make >/dev/null
 cp aplay/aplay "$DIST/arecord" 2>/dev/null || cp aplay/aplay "$DIST/aplay"
 file "$DIST"/* 2>/dev/null || true
@@ -113,7 +114,9 @@ file "$DIST"/* 2>/dev/null || true
 if [ -d "$STAGE/usr/share/alsa" ]; then
   mkdir -p "$DIST/alsa"
   cp -r "$STAGE/usr/share/alsa/." "$DIST/alsa/"
-  echo "==> 打包 ALSA 配置 -> $DIST/alsa/"
+  # 完整 alsa.conf 的 @hooks 需要 dlopen 动态库, 静态 arecord 用不了 -> 换精简配置
+  cp "$(dirname "$0")/alsa.min.conf" "$DIST/alsa/alsa.conf"
+  echo "==> 打包 ALSA 配置(精简版) -> $DIST/alsa/"
 fi
 
 # ---------------- 6. 版本信息/vermagic 校验 ----------------
