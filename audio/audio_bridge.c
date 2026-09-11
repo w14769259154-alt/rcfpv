@@ -10,8 +10,9 @@
  *   [0x41][2B big-endian len][payload]    上行=裸 Opus 帧; 下行=WebRTC RTP 包
  *   命令/回执 = 纯文本 UTF-8
  *
- * 用法: audio_bridge [-l 7214] [-o 10.55.0.1:7213] [-d plughw:1,0]
+ * 用法: audio_bridge [-l 7214] [-o 10.55.0.1:7213] [-i hw:0,0] [-p hw:1,0]
  *                    [-g 100] [-v 60] [-s 80]
+ *   -i 采集设备(默认 hw:0,0 = card0 麦克风 mono); -p 播放设备(默认 hw:1,0 = card1 扬声器 stereo)
  * 依赖: alsa-lib + opus(均静态链接); 需内核 USB Audio 驱动(自编固件)
  */
 #include <alsa/asoundlib.h>
@@ -198,7 +199,8 @@ static int open_alsa(const char *capdev, const char *playdev) {
 }
 
 int main(int argc, char **argv) {
-    const char *dev = "plughw:1,0";
+    const char *capdev = "hw:0,0";       /* 麦克风 card0(mono) */
+    const char *playdev = "hw:1,0";      /* 扬声器 card1(stereo 48k) */
     int listen_port = 7214;
     const char *vps = "10.55.0.1:7213";
     int init_gain = 100, init_hw = 60, init_spk = 80;
@@ -206,12 +208,13 @@ int main(int argc, char **argv) {
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "-l") && i + 1 < argc) listen_port = atoi(argv[++i]);
         else if (!strcmp(argv[i], "-o") && i + 1 < argc) vps = argv[++i];
-        else if (!strcmp(argv[i], "-d") && i + 1 < argc) dev = argv[++i];
+        else if (!strcmp(argv[i], "-i") && i + 1 < argc) capdev = argv[++i];
+        else if (!strcmp(argv[i], "-p") && i + 1 < argc) playdev = argv[++i];
         else if (!strcmp(argv[i], "-g") && i + 1 < argc) init_gain = atoi(argv[++i]);
         else if (!strcmp(argv[i], "-v") && i + 1 < argc) init_hw = atoi(argv[++i]);
         else if (!strcmp(argv[i], "-s") && i + 1 < argc) init_spk = atoi(argv[++i]);
         else if (!strcmp(argv[i], "-h")) {
-            printf("用法: %s [-l 7214] [-o IP:PORT] [-d alsa_dev] [-g 增益%%] [-v 采集音量%%] [-s 扬声器音量%%]\n", argv[0]);
+            printf("用法: %s [-l 7214] [-o IP:PORT] [-i 采集设备] [-p 播放设备] [-g 增益%%] [-v 采集音量%%] [-s 扬声器音量%%]\n", argv[0]);
             return 0;
         }
     }
@@ -223,13 +226,13 @@ int main(int argc, char **argv) {
     signal(SIGTERM, on_sig);
 
     /* ---- ALSA ---- */
-    if (open_alsa(dev) < 0) return 1;
+    if (open_alsa(capdev, playdev) < 0) return 1;
     apply_hw_vol(hw_vol);
 
     /* ---- Opus ---- */
     int oe = 0, od = 0;
-    enc = opus_encoder_create(RATE, CH, OPUS_APPLICATION_VOIP, &oe);
-    dec = opus_decoder_create(RATE, CH, &od);
+    enc = opus_encoder_create(RATE, CH_CAP, OPUS_APPLICATION_VOIP, &oe);
+    dec = opus_decoder_create(RATE, CH_CAP, &od);
     if (!enc || !dec) { fprintf(stderr, "opus init 失败 (%d/%d)\n", oe, od); return 1; }
     opus_encoder_ctl(enc, OPUS_SET_BITRATE(32000));
     opus_encoder_ctl(enc, OPUS_SET_VBR(1));
