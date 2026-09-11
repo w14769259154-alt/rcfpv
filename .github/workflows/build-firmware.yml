@@ -1,0 +1,40 @@
+name: build-firmware
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+    paths: [ 'firmware/**', 'audio/audio_bridge.c', 'audio/build_audio_bridge.sh', '.github/workflows/build-firmware.yml' ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq \
+            build-essential cmake pkg-config git wget dos2unix \
+            automake autotools-dev bc cpio file rsync unzip \
+            libssl-dev libncurses-dev lzop libtool gettext \
+            python3 python3-pip fzf
+          python3 -m pip install --user --break-system-packages kconfiglib || true
+
+      - name: Normalize line endings
+        run: |
+          find firmware audio -type f \( -name '*.sh' -o -name '*.conf' -o -name '*.c' -o -name '*.fragment' -o -name '*defconfig' \) -exec dos2unix {} +
+          chmod +x firmware/build_firmware.sh audio/build_audio_bridge.sh audio/build_snd.sh
+
+      - name: Build firmware
+        run: bash firmware/build_firmware.sh
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: openipc-ssc338q-rc
+          path: firmware/dist/openipc.ssc338q-nor-rc.tgz
+          if-no-files-found: error
