@@ -64,12 +64,15 @@ void UdpAudioBridge::stop() {
 
 void UdpAudioBridge::sendDownstream(const uint8_t *data, size_t size) {
     if (fd_ < 0 || size == 0 || size > 0xFFFF) return;
-    uint8_t hdr[3] = {kAudioMagic, static_cast<uint8_t>(size >> 8),
-                      static_cast<uint8_t>(size & 0xFF)};
+    // 必须单包发送(头+数据连续):摄像头端按"同包内 3+len<=n"解析,
+    // 分两包发会被当成两条独立 UDP 包,数据帧永远匹配不上
+    uint8_t pkt[3 + 0xFFFF];
+    pkt[0] = kAudioMagic;
+    pkt[1] = static_cast<uint8_t>(size >> 8);
+    pkt[2] = static_cast<uint8_t>(size & 0xFF);
+    memcpy(pkt + 3, data, size);
     std::lock_guard<std::mutex> lk(sendMutex_);
-    sendto(fd_, hdr, sizeof(hdr), 0, reinterpret_cast<sockaddr *>(&camAddr_),
-           sizeof(camAddr_));
-    sendto(fd_, data, size, 0, reinterpret_cast<sockaddr *>(&camAddr_),
+    sendto(fd_, pkt, 3 + size, 0, reinterpret_cast<sockaddr *>(&camAddr_),
            sizeof(camAddr_));
 }
 
