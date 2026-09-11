@@ -40,6 +40,14 @@
 #define UDP_BUF 4096
 #define MAGIC 0x41
 
+/* 下行抗丢包/乱序:
+ * - 解码器按 stereo 创建:edge 对讲轨 SDP 声明 opus/48000/2,浏览器按 stereo 编码,
+ *   mono 解码器解 stereo 帧会数据错位出杂音;stereo 解码器兼容 mono/stereo 帧
+ * - RTP 抖动缓冲重排 + 丢包 PLC 隐藏,避免蜂窝公网丢包/乱序造成断音爆音 */
+#define CH_DEC 2                 /* 下行解码声道 */
+#define JBUF 4                   /* RTP 重排窗口(4 帧=80ms) */
+#define PLC_MAX 4                /* 连续丢包最多 PLC 补 4 帧(80ms),超限跳过缺口 */
+
 /* ---------------- 全局状态 ---------------- */
 static volatile sig_atomic_t g_stop = 0;
 static void on_sig(int s) { (void)s; g_stop = 1; }
@@ -58,11 +66,18 @@ static int hw_vol = 60;                  /* 采集硬件音量%(mixer) */
 static int spk_vol = 80;                 /* 播放软件音量% */
 static float spk_scale = 0.8f;
 
-/* 播放队列(有界,防抖) */
-#define QMAX 3                 /* 播放队列上限(60ms):对讲低延迟优先,攒帧会放大延迟,丢帧可接受 */
-static short qbuf[QMAX][FRAME];
+/* 播放队列(有界,防抖):帧为 stereo 交错(解码后已是 2 声道) */
+#define QMAX 4                 /* 播放队列上限(80ms):对讲低延迟,抖动由 PLC 吸收 */
+static short qbuf[QMAX][FRAME * 2];
 static int qn = 0;
 static pthread_mutex_t qmtx = PTHREAD_MUTEX_INITIALIZER;
+
+/* 下行 RTP 抖动缓冲(重排 + 丢包检测) */
+static unsigned short jseq[JBUF];
+static short jpcm[JBUF][FRAME * 2];
+static unsigned char jv[JBUF];
+static unsigned short next_out = 0;
+static int have_next = 0;
 
 /* ---------------- 小工具 ---------------- */
 static void set_vol_scale(int pct) {
@@ -148,27 +163,86 @@ static void handle_cmd(const char *line) {
     /* 未知命令忽略 */
 }
 
-/* ---------------- 播放线程(mono → stereo,写 card1) ---------------- */
+/* ---------------- 下行抖动缓冲 + 播放队列 ---------------- */
+
+/* 送入播放队列(带音量钳制由播放线程做,这里只排队) */
+static void q_enqueue(const short *pcm) {
+    pthread_mutex_lock(&qmtx);
+    if (qn < QMAX) {
+        memcpy(qbuf[qn], pcm, sizeof(qbuf[qn]));
+        qn++;
+    }
+    pthread_mutex_unlock(&qmtx);
+}
+
+/* RTP 帧按序列号入抖动缓冲(槽=seq%JBUF, 窗口内 4 帧不冲突) */
+static void jitter_in(unsigned short seq, const short *pcm) {
+    int slot = seq % JBUF;
+    if (jv[slot] && jseq[slot] == seq) return; /* 重复包,丢弃 */
+    jseq[slot] = seq;
+    memcpy(jpcm[slot], pcm, sizeof(jpcm[slot]));
+    jv[slot] = 1;
+    if (!have_next || (int)(unsigned short)(seq - next_out) < 0) {
+        next_out = seq;
+        have_next = 1;
+    }
+}
+
+/* 按序排出缓冲帧到播放队列;缺口用 PLC 补帧(最多 PLC_MAX),超限跳过 */
+static void jitter_drain(void) {
+    int plc = 0;
+    while (have_next) {
+        int slot = next_out % JBUF;
+        if (jv[slot] && jseq[slot] == next_out) {
+            jv[slot] = 0;
+            q_enqueue(jpcm[slot]);
+            next_out++;
+            continue;
+        }
+        /* 缺口:丢包,PLC 隐藏(静音延续) */
+        if (plc < PLC_MAX) {
+            short pl[FRAME * 2];
+            int n = opus_decode(dec, NULL, 0, pl, FRAME, 0);
+            if (n > 0) {
+                q_enqueue(pl);
+                next_out++;
+                plc++;
+                continue;
+            }
+        }
+        /* PLC 超限或失败:跳过缺口,定位下一个有效帧 */
+        int adv;
+        for (adv = 1; adv <= JBUF; adv++) {
+            int s2 = (next_out + adv) % JBUF;
+            if (jv[s2]) { next_out = jseq[s2]; break; }
+        }
+        if (adv > JBUF) have_next = 0;
+    }
+}
+
+/* ---------------- 播放线程(stereo 直写 card1) ---------------- */
 static void *play_thread(void *arg) {
     (void)arg;
     static short silent[FRAME * 2];
-    static short stereo[FRAME * 2];
+    static short out[FRAME * 2];
     while (!g_stop) {
         short *pcm = NULL;
         pthread_mutex_lock(&qmtx);
-        if (qn > 0) { pcm = qbuf[0]; qn--; memmove(qbuf[0], qbuf[1], (size_t)qn * sizeof(qbuf[0])); }
+        if (qn > 0) {
+            pcm = qbuf[0];
+            qn--;
+            memmove(qbuf[0], qbuf[1], (size_t)qn * sizeof(qbuf[0]));
+        }
         pthread_mutex_unlock(&qmtx);
         if (!pcm) pcm = (short *)silent;
-        /* mono → stereo + 软件音量 */
-        for (int i = 0; i < FRAME; i++) {
+        /* 软件音量(stereo 交错,已经是 2 声道) */
+        for (int i = 0; i < FRAME * 2; i++) {
             float v = pcm[i] * spk_scale;
             if (v > 32767.0f) v = 32767.0f;
             if (v < -32768.0f) v = -32768.0f;
-            short s = (short)v;
-            stereo[i * 2] = s;
-            stereo[i * 2 + 1] = s;
+            out[i] = (short)v;
         }
-        snd_pcm_sframes_t r = snd_pcm_writei(play, stereo, FRAME);
+        snd_pcm_sframes_t r = snd_pcm_writei(play, out, FRAME);
         if (r < 0) { snd_pcm_prepare(play); }
     }
     return NULL;
@@ -242,7 +316,8 @@ int main(int argc, char **argv) {
     /* ---- Opus ---- */
     int oe = 0, od = 0;
     enc = opus_encoder_create(RATE, CH_CAP, OPUS_APPLICATION_VOIP, &oe);
-    dec = opus_decoder_create(RATE, CH_CAP, &od);
+    /* 下行解码器按 stereo:浏览器按 SDP opus/48000/2 编码,mono 解码器解 stereo 帧会错乱 */
+    dec = opus_decoder_create(RATE, CH_DEC, &od);
     if (!enc || !dec) { fprintf(stderr, "opus init 失败 (%d/%d)\n", oe, od); return 1; }
     opus_encoder_ctl(enc, OPUS_SET_BITRATE(32000));
     opus_encoder_ctl(enc, OPUS_SET_VBR(1));
@@ -291,15 +366,21 @@ int main(int argc, char **argv) {
             if (buf[0] == MAGIC && n >= 3) {
                 int len = (buf[1] << 8) | buf[2];
                 if (len > 0 && 3 + len <= n) {
-                    /* 剥 RTP 头(12B + csrc + ext)取 Opus 帧 */
+                    /* 剥 RTP 头(12B + csrc + ext + padding)取 Opus 帧 */
                     const unsigned char *p = buf + 3;
                     int plen = len;
+                    unsigned short seq = 0;
                     if (plen >= 12 && (p[0] >> 6) == 2) {
+                        seq = (unsigned short)((p[2] << 8) | p[3]);
                         int off = 12 + ((p[0] & 0x0F) << 2); /* 12 + csrc*4 */
+                        /* padding:末字节为 pad 字节数,剥掉避免 opus 解包报错 */
+                        if ((p[0] & 0x20) && plen >= off + 1) {
+                            int pad = p[plen - 1];
+                            if (pad > 0 && pad < plen) plen -= pad;
+                        }
                         if ((p[0] & 0x10) && plen >= off + 4) {
                             /* RTP extension: [16bit profile][16bit len(4字节单位)] */
-                            /* 长度字是 p[off+2]/p[off+3],不是 p[off]/p[off+1]
-                             * (profile 通常 0xBEDE,用错会算出巨大偏移→剥头失败) */
+                            /* 长度字是 p[off+2]/p[off+3],不是 p[off]/p[off+1] */
                             int extlen = (((p[off + 2] & 0xFF) << 8) |
                                           (p[off + 3] & 0xFF)) << 2;
                             if (extlen > 0 && extlen <= plen - off - 4)
@@ -307,12 +388,18 @@ int main(int argc, char **argv) {
                         }
                         if (off < plen) { p += off; plen -= off; }
                     }
-                    short out[FRAME];
-                    int got = opus_decode(dec, p, plen, out, FRAME, 0);
-                    if (got > 0) {
-                        pthread_mutex_lock(&qmtx);
-                        if (qn < QMAX) { memcpy(qbuf[qn], out, (size_t)got * 2); qn++; }
-                        pthread_mutex_unlock(&qmtx);
+                    if (plen > 0) {
+                        short out[FRAME * 2];
+                        int got = opus_decode(dec, p, plen, out, FRAME, 0);
+                        if (got < 0) got = 0;
+                        /* 帧内样本不足(罕见):PLC 补齐到 FRAME,避免播放残留脏数据 */
+                        if (got > 0 && got < FRAME) {
+                            short tmp[FRAME];
+                            int n2 = opus_decode(dec, NULL, 0, tmp, FRAME - got, 0);
+                            if (n2 > 0)
+                                memcpy(out + (size_t)got * 2, tmp, (size_t)n2 * 2);
+                        }
+                        if (got > 0) jitter_in(seq, out);
                     }
                 }
             } else {
@@ -323,6 +410,9 @@ int main(int argc, char **argv) {
                 handle_cmd(line);
             }
         }
+
+        /* 2.5 抖动缓冲按序排出(重排 + PLC 补丢包) */
+        jitter_drain();
 
         /* 2. 采集 → 编码 → 发送 */
         snd_pcm_sframes_t rd = snd_pcm_readi(cap, pcm, FRAME);

@@ -1,7 +1,7 @@
 {
   "rtsp": {
-    "url": "rtsp://admin:CHANGE_ME@10.55.0.2:554/stream=0",
-    "url2": "rtsp://admin:CHANGE_ME@10.55.0.3:554/stream=0",
+    "url": "rtsp://root:CHANGE_ME@10.55.0.2:554/stream=0",
+    "url2": "rtsp://root:CHANGE_ME@10.55.0.3:554/stream=0",
     "codec": "H265",
     "transport": "tcp",
     "buffer_size": 212992
