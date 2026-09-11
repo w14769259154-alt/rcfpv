@@ -28,6 +28,11 @@ bool SignalingClient::connect() {
     // 连云服务器 wss 自签证书时禁用 TLS 校验(disable_tls_verify=true)
     rtc::WebSocketConfiguration wsCfg;
     wsCfg.disableTlsVerification = cfg_.disableTlsVerify;
+    // 保活:15s 主动 ping,2 次无 pong 判定连接失效 → 触发 onClosed 走重连。
+    // 缺省时若服务端已 terminate/移除本连接,客户端 TCP 半开不感知(onClosed 不触发),
+    // connected_ 永远为 true → 重连循环跳过 → edge 从房间消失但视频侧不自愈
+    wsCfg.pingInterval = std::chrono::milliseconds(15000);
+    wsCfg.maxOutstandingPings = 2;
     auto ws = std::make_shared<rtc::WebSocket>(wsCfg);
 
     ws->onOpen([this] {
@@ -141,6 +146,7 @@ bool SignalingClient::sendJson(const std::string &jsonStr) {
 }
 
 void SignalingClient::runReconnectLoop() {
+    int joinTicks = 0;
     while (!stopping_) {
         // 3s 间隔:1s 会造成重连风暴(每秒新建连接覆盖旧的)
         std::this_thread::sleep_for(std::chrono::seconds(3));
@@ -151,6 +157,19 @@ void SignalingClient::runReconnectLoop() {
         if (!connected_) {
             std::cout << "[signaling] 自动重连..." << std::endl;
             connect();
+        } else if (++joinTicks >= 10) {
+            // 每 30s 重发 join(幂等):防服务端因心跳/超时把本连接从房间条目移除
+            // 但 TCP 仍存活(客户端 onClosed 未触发)导致收不到 viewer_ready 的复发场景
+            joinTicks = 0;
+            std::lock_guard<std::mutex> lk(wsMutex_);
+            if (ws_ && ws_->isOpen()) {
+                json join = {{"type", "join"},
+                             {"room", cfg_.roomId},
+                             {"role", "broadcaster"},
+                             {"id", cfg_.clientId}};
+                ws_->send(join.dump());
+                std::cout << "[signaling] 保活重发 join: " << cfg_.roomId << std::endl;
+            }
         }
     }
 }
