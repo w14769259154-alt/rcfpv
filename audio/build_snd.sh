@@ -33,7 +33,9 @@ if [ ! -x "$TC_DIR/bin/arm-openipc-linux-gnueabihf-gcc" ]; then
   wget -q "$TOOLCHAIN_URL" -O "$WORK/tc.tgz"
   tar -xzf "$WORK/tc.tgz" -C "$TC_DIR" --strip-components=1
 fi
-export PATH="$TC_DIR/bin:$PATH"
+# 系统 bin 放最前: 工具链自带残缺 autotools 包装脚本(缺 Perl 模块), 会让 autoreconf/aclocal 崩溃;
+# 交叉编译器用全名调用(arm-openipc-*-gcc), 工具链 bin 保持在 PATH 中即可
+export PATH="/usr/bin:/bin:$TC_DIR/bin:$PATH"
 CROSS="arm-openipc-linux-gnueabihf-"
 "$CROSS"gcc --version | head -1
 
