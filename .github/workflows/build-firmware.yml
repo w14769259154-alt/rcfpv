@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches: [ main, master ]
-    paths: [ 'firmware/**', 'audio/audio_bridge.c', 'audio/build_audio_bridge.sh', '.github/workflows/build-firmware.yml' ]
+    paths: [ 'firmware/**', '.github/workflows/build-firmware.yml' ]
 
 jobs:
   build:
