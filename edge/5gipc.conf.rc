@@ -1,0 +1,30 @@
+# 架构(2026-09-11 定稿, 基于实机能力):
+#   WG 隧道: 固件原生支持, 配置在 u-boot env(wg_privkey/wg_pubkey/wg_endpoint/
+#            wg_alive/wg_allowed/wg_address), S98wireguard 开机自启, 本文件不管
+#   数传:    mavfwd(SD卡静态二进制) 经隧道 → VPS:7212(VPS edge MavlinkBridge) ↔ WebRTC
+#   视频:    majestic RTSP(554, 默认已开) ← VPS edge RtspCapture 经隧道主动拉(WebRTC 推流)
+#   音频:    audio_bridge(SD卡) ↔ VPS:7213/7214(UdpAudioBridge), 经隧道
+#
+# WG u-boot env(设置示例, VPS侧部署后回填):
+#   fw_setenv wg_endpoint "<VPS公网IP>:51821"
+#   fw_setenv wg_pubkey "<VPS hub公钥>"
+#   fw_setenv wg_alive "25"
+#   fw_setenv wg_allowed "10.55.0.0/24"
+#   fw_setenv wg_address "10.55.0.2/32"
+#   (wg_privkey 已生成写入)
+
+# ===== 设备标识 =====
+ROOM_ID="01"
+
+# ===== 数传(mavfwd) =====
+MAVLINK_ENABLE="1"
+# SD 卡上的静态二进制(FPV 固件提取, musl static)
+MAVFWD_BIN="/mnt/mmcblk0p1/5gipc/bin/mavfwd"
+# 飞控串口(ssc338q 实测 ttyS2 = 飞控数据口)
+MAVFWD_UART="/dev/ttyS2"
+MAVFWD_BAUD="115200"
+# 输出目标: VPS WG 地址 + VPS edge MavlinkBridge 监听端口
+MAVFWD_OUT="10.55.0.1:7212"
+
+# ===== 监护 =====
+CHECK_INTERVAL="10"

@@ -1,0 +1,36 @@
+name: build-edge-skel
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+    paths: [ 'edge-skel/**', '.github/workflows/build-edge-skel.yml' ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq \
+            build-essential cmake pkg-config git wget \
+            libssl-dev dos2unix
+
+      - name: Normalize line endings
+        run: |
+          dos2unix edge-skel/edge_skel.cpp edge-skel/build_edge_skel.sh
+          chmod +x edge-skel/build_edge_skel.sh
+
+      - name: Build edge_skel (ARMv7 cross)
+        run: bash edge-skel/build_edge_skel.sh
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: edge-skel
+          path: edge-skel/dist/edge_skel
+          if-no-files-found: error
