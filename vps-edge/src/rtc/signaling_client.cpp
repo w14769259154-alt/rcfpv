@@ -21,7 +21,7 @@ void SignalingClient::setOnCandidate(CandidateCallback cb) { onCandidate_ = std:
 bool SignalingClient::connect() {
     {
         std::lock_guard<std::mutex> lk(wsMutex_);
-        if (ws_ && ws_->isOpen()) return true;
+        if (connected_ && ws_ && ws_->isOpen()) return true;
     }
 
     std::cout << "[signaling] 连接: " << cfg_.serverUrl << std::endl;
@@ -31,6 +31,7 @@ bool SignalingClient::connect() {
     auto ws = std::make_shared<rtc::WebSocket>(wsCfg);
 
     ws->onOpen([this] {
+        connected_ = true;
         std::cout << "[signaling] 已连接,加入房间: " << cfg_.roomId << std::endl;
         json join = {{"type", "join"},
                      {"room", cfg_.roomId},
@@ -80,8 +81,12 @@ bool SignalingClient::connect() {
         }
     });
 
-    ws->onClosed([] { std::cout << "[signaling] 连接关闭,等待自动重连" << std::endl; });
-    ws->onError([](std::string err) {
+    ws->onClosed([this] {
+        connected_ = false;
+        std::cout << "[signaling] 连接关闭,等待自动重连" << std::endl;
+    });
+    ws->onError([this](std::string err) {
+        connected_ = false;
         std::cerr << "[signaling] 错误: " << err << std::endl;
     });
 
@@ -141,12 +146,9 @@ void SignalingClient::runReconnectLoop() {
         std::this_thread::sleep_for(std::chrono::seconds(3));
         if (stopping_) break;
 
-        std::shared_ptr<rtc::WebSocket> ws;
-        {
-            std::lock_guard<std::mutex> lk(wsMutex_);
-            ws = ws_;
-        }
-        if (!ws || !ws->isOpen()) {
+        // 以 connected_ 为准(而非 ws_->isOpen):连接被服务端 terminate 时
+        // isOpen 可能仍返回 true,导致重连循环永远跳过
+        if (!connected_) {
             std::cout << "[signaling] 自动重连..." << std::endl;
             connect();
         }

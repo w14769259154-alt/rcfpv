@@ -80,8 +80,12 @@ void WebRtcStreamer::createOfferForViewer(const std::string &viewerId) {
         if (oldViewer && oldViewer->pc) oldViewer->pc->close();
     }
 
-    std::lock_guard<std::mutex> lk(mutex_);
     std::cout << "[webrtc] 为 viewer 创建 offer: " << viewerId << std::endl;
+    // ⚠️ 全程不持 mutex_ 构建:创建 PeerConnection/DataChannel 会触发
+    // libdatachannel 事件循环回调(onStateChange/onLocalDescription 等),
+    // 若回调尝试获取 mutex_ 而这里持锁,会造成事件循环死锁
+    // (现象:offer 不生成、WebSocket 不回 pong 被信令踢、主路采集停)。
+    // 仅在最后插入 viewers_ 时短暂持锁。
 
     rtc::Configuration rtcCfg;
     for (const auto &s : cfg_.stunServers)
@@ -274,7 +278,11 @@ void WebRtcStreamer::createOfferForViewer(const std::string &viewerId) {
 
     // 自动协商:createDataChannel 已触发 offer 生成,回调已就位
 
-    viewers_[viewerId] = viewer;
+    // 最后再入表(短暂持锁;构建期间未持锁,事件循环回调可自由获取 mutex_)
+    {
+        std::lock_guard<std::mutex> lk(mutex_);
+        viewers_[viewerId] = viewer;
+    }
 }
 
 void WebRtcStreamer::handleAnswer(const std::string &viewerId, const std::string &sdp) {

@@ -65,6 +65,9 @@ private:
     CandidateCallback onCandidate_;
 
     std::atomic<bool> stopping_{false};
+    // 连接真实状态(onOpen/onClosed 回调维护):重连循环以此为准,
+    // 避免 libdatachannel isOpen() 在连接被服务端 terminate 后误报 true 导致永不重连
+    std::atomic<bool> connected_{false};
     std::thread reconnectThread_;
 };
 
