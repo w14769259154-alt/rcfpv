@@ -8,6 +8,7 @@
 set -euo pipefail
 
 DIST="$(pwd)/audio/dist"   # 与 workflow upload-artifact path: audio/dist/ 保持一致
+ROOT="$(pwd)"              # 仓库根(后续脚本会 cd, 引用仓库内文件用绝对路径)
 WORK="$(pwd)/work"
 TC_DIR="$WORK/toolchain"
 KSRC="$WORK/linux"
@@ -115,7 +116,7 @@ if [ -d "$STAGE/usr/share/alsa" ]; then
   mkdir -p "$DIST/alsa"
   cp -r "$STAGE/usr/share/alsa/." "$DIST/alsa/"
   # 完整 alsa.conf 的 @hooks 需要 dlopen 动态库, 静态 arecord 用不了 -> 换精简配置
-  cp "$(dirname "$0")/alsa.min.conf" "$DIST/alsa/alsa.conf"
+  cp "$ROOT/audio/alsa.min.conf" "$DIST/alsa/alsa.conf"
   echo "==> 打包 ALSA 配置(精简版) -> $DIST/alsa/"
 fi
 
