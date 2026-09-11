@@ -85,7 +85,7 @@ wget -q "$ALSA_LIB_URL" -O alsa-lib.tgz
 tar -xzf alsa-lib.tgz
 cd alsa-lib-${ALSA_VER}
 /usr/bin/autoreconf -fi         # GitHub 源码不含 configure; 用系统 autoconf(PATH 里工具链自带的是坏脚本)
-./configure --host="$CROSS" --prefix="$STAGE/usr" \
+./configure --host="${CROSS%-}" --prefix="$STAGE/usr" \
   --enable-static --disable-shared --with-pic >/dev/null
 make -j"$(nproc)" >/dev/null && make install >/dev/null
 
@@ -96,7 +96,7 @@ tar -xzf alsa-utils.tgz
 cd alsa-utils-${ALSA_VER}
 /usr/bin/autoreconf -fi         # 同上, 用系统 autoconf 生成 configure
 export PKG_CONFIG_PATH="$STAGE/usr/lib/pkgconfig"
-./configure --host="$CROSS" --prefix="$STAGE/usr" \
+./configure --host="${CROSS%-}" --prefix="$STAGE/usr" \
   --disable-alsaconf --disable-alsactl --disable-alsaloop \
   --disable-alsamixer --disable-alsaucm --disable-amixer \
   --disable-speaker-test --disable-bat --disable-xmlto --disable-nls \
