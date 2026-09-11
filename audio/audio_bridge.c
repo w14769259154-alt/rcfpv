@@ -98,12 +98,19 @@ static void apply_hw_vol(int pct) {
     snd_mixer_close(h);
 }
 
-/* 发送一帧到 VPS:[MAGIC][len][payload] */
+/* 发送一帧到 VPS:[MAGIC][2B len][payload] 单包发送 */
+/* 注意:必须单包(头+数据连续)。分两包发时接收端 select/recvfrom
+ * 会把头包和数据包分开收,而解析按"同包内 3+len<=n"检查,数据会被丢弃
+ * (UDP 单包上限 65507 > 3+OPUS_MAX,安全) */
 static void send_frame(const void *payload, int len) {
     if (udp_fd < 0 || len <= 0 || len > 0xFFFF) return;
-    unsigned char hdr[3] = {MAGIC, (unsigned char)(len >> 8), (unsigned char)(len & 0xFF)};
-    sendto(udp_fd, hdr, 3, 0, (struct sockaddr *)&vps_addr, sizeof(vps_addr));
-    sendto(udp_fd, payload, (size_t)len, 0, (struct sockaddr *)&vps_addr, sizeof(vps_addr));
+    unsigned char pkt[3 + OPUS_MAX];
+    pkt[0] = MAGIC;
+    pkt[1] = (unsigned char)(len >> 8);
+    pkt[2] = (unsigned char)(len & 0xFF);
+    memcpy(pkt + 3, payload, (size_t)len);
+    sendto(udp_fd, pkt, 3 + (size_t)len, 0, (struct sockaddr *)&vps_addr,
+           sizeof(vps_addr));
 }
 
 /* 发送文本回执到最近下行源 */
@@ -285,8 +292,16 @@ int main(int argc, char **argv) {
                     const unsigned char *p = buf + 3;
                     int plen = len;
                     if (plen >= 12 && (p[0] >> 6) == 2) {
-                        int off = 12 + ((p[0] & 0x0F) << 2);
-                        if ((p[0] & 0x10) && plen >= off + 4) off += 4 + (((p[off] & 0xFF) << 8) | (p[off + 1] & 0xFF));
+                        int off = 12 + ((p[0] & 0x0F) << 2); /* 12 + csrc*4 */
+                        if ((p[0] & 0x10) && plen >= off + 4) {
+                            /* RTP extension: [16bit profile][16bit len(4字节单位)] */
+                            /* 长度字是 p[off+2]/p[off+3],不是 p[off]/p[off+1]
+                             * (profile 通常 0xBEDE,用错会算出巨大偏移→剥头失败) */
+                            int extlen = (((p[off + 2] & 0xFF) << 8) |
+                                          (p[off + 3] & 0xFF)) << 2;
+                            if (extlen > 0 && extlen <= plen - off - 4)
+                                off += 4 + extlen;
+                        }
                         if (off < plen) { p += off; plen -= off; }
                     }
                     short out[FRAME];
