@@ -82,6 +82,7 @@ cd "$WORK"
 wget -q "$ALSA_LIB_URL" -O alsa-lib.tgz
 tar -xzf alsa-lib.tgz
 cd alsa-lib-${ALSA_VER}
+autoreconf -fi                 # GitHub 源码不含 configure, 需先生成(autoconf 项目)
 ./configure --host="$CROSS" --prefix="$STAGE/usr" \
   --enable-static --disable-shared --with-pic >/dev/null
 make -j"$(nproc)" >/dev/null && make install >/dev/null
@@ -91,6 +92,7 @@ cd "$WORK"
 wget -q "$ALSA_UTILS_URL" -O alsa-utils.tgz
 tar -xzf alsa-utils.tgz
 cd alsa-utils-${ALSA_VER}
+autoreconf -fi                 # 同上, 源码不含 configure
 export PKG_CONFIG_PATH="$STAGE/usr/lib/pkgconfig"
 ./configure --host="$CROSS" --prefix="$STAGE/usr" \
   --disable-alsaconf --disable-alsactl --disable-alsaloop \
