@@ -22,8 +22,9 @@ TOOLCHAIN_URL="https://github.com/openipc/firmware/releases/download/toolchain/t
 KERNEL_URL="https://github.com/openipc/linux/archive/refs/heads/${KERNEL_TAG}.tar.gz"
 CONFIG_URL="https://raw.githubusercontent.com/OpenIPC/firmware/master/br-ext-chip-sigmastar/board/infinity6e/infinity6e-ssc012b.config"
 ALSA_VER="1.2.11"
-ALSA_LIB_URL="https://github.com/alsa-project/alsa-lib/archive/refs/tags/v${ALSA_VER}.tar.gz"
-ALSA_UTILS_URL="https://github.com/alsa-project/alsa-utils/archive/refs/tags/v${ALSA_VER}.tar.gz"
+# 用 ALSA 官方发布包(自带 configure + AM_PATH_ALSA 宏已展开), 避免 GitHub 源码需 autoreconf 的一堆坑
+ALSA_LIB_URL="https://www.alsa-project.org/files/pub/lib/alsa-lib-${ALSA_VER}.tar.bz2"
+ALSA_UTILS_URL="https://www.alsa-project.org/files/pub/utils/alsa-utils-${ALSA_VER}.tar.bz2"
 
 echo "==> 构建产物目录: $DIST"
 
@@ -81,21 +82,18 @@ done
 # ---------------- 5. 交叉编译静态 arecord ----------------
 echo "==> 编译 alsa-lib (静态) ..."
 cd "$WORK"
-wget -q "$ALSA_LIB_URL" -O alsa-lib.tgz
-tar -xzf alsa-lib.tgz
+wget -q "$ALSA_LIB_URL" -O alsa-lib.tbz2
+tar -xjf alsa-lib.tbz2
 cd alsa-lib-${ALSA_VER}
-/usr/bin/autoreconf -fi         # GitHub 源码不含 configure; 用系统 autoconf(PATH 里工具链自带的是坏脚本)
 ./configure --host="${CROSS%-}" --prefix="$STAGE/usr" \
   --enable-static --disable-shared --with-pic >/dev/null
 make -j"$(nproc)" >/dev/null && make install >/dev/null
 
 echo "==> 编译 alsa-utils (仅 aplay/arecord, 静态) ..."
 cd "$WORK"
-wget -q "$ALSA_UTILS_URL" -O alsa-utils.tgz
-tar -xzf alsa-utils.tgz
+wget -q "$ALSA_UTILS_URL" -O alsa-utils.tbz2
+tar -xjf alsa-utils.tbz2
 cd alsa-utils-${ALSA_VER}
-# AM_PATH_ALSA 宏在 alsa-lib 源码 m4/ 目录, 需 -I 传给 aclocal, 否则 autoreconf 报 undefined macro
-/usr/bin/autoreconf -fi -I "$WORK/alsa-lib-${ALSA_VER}/m4"
 export PKG_CONFIG_PATH="$STAGE/usr/lib/pkgconfig"
 ./configure --host="${CROSS%-}" --prefix="$STAGE/usr" \
   --disable-alsaconf --disable-alsactl --disable-alsaloop \
