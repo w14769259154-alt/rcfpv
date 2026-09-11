@@ -1,0 +1,62 @@
+#!/bin/sh
+# 5gIPC 数传监护循环 — 等 WG 隧道就绪后启动并监护 mavfwd
+# 由 /etc/init.d/S99_5gipc 守护方式拉起
+
+CONF="/etc/5gipc.conf"
+[ -f "$CONF" ] || { echo "5gipc-monitor: 缺 $CONF" >&2; exit 1; }
+. "$CONF"
+[ "$MAVLINK_ENABLE" = "1" ] || exit 0
+
+RUNDIR="/var/run/5gipc"
+LOGDIR="/tmp/log/5gipc"
+LOG="$LOGDIR/5gipc.log"
+PIDFILE="$RUNDIR/monitor.pid"
+WG_IF="wg0"
+
+mkdir -p "$RUNDIR" "$LOGDIR"
+
+log() {
+    echo "$(date '+%m-%d %H:%M:%S') $*" >> "$LOG"
+    if [ "$(wc -l < "$LOG")" -gt 300 ]; then
+        tail -n 150 "$LOG" > "$LOG.tmp" 2>/dev/null && mv "$LOG.tmp" "$LOG"
+    fi
+}
+
+alive() {
+    [ -f "$1" ] || return 1
+    p=$(cat "$1" 2>/dev/null)
+    [ -n "$p" ] && [ -d "/proc/$p" ] && return 0
+    rm -f "$1"; return 1
+}
+
+wg_ready() {
+    ip link show "$WG_IF" >/dev/null 2>&1 || return 1
+    ip -4 addr show dev "$WG_IF" 2>/dev/null | grep -q 'inet '
+}
+
+start_mavfwd() {
+    [ -x "$MAVFWD_BIN" ] || { log "mavfwd 不存在: $MAVFWD_BIN"; return 1; }
+    log "启动 mavfwd $MAVFWD_UART@$MAVFWD_BAUD -> $MAVFWD_OUT"
+    "$MAVFWD_BIN" -m "$MAVFWD_UART" -b "$MAVFWD_BAUD" -o "$MAVFWD_OUT" \
+        >>"$LOGDIR/mavfwd.log" 2>&1 &
+    echo $! > "$RUNDIR/mavfwd.pid"
+    sleep 2
+    if alive "$RUNDIR/mavfwd.pid"; then return 0; fi
+    log "mavfwd 秒退(查 $LOGDIR/mavfwd.log)"
+    return 1
+}
+
+echo $$ > "$PIDFILE"
+trap 'rm -f "$PIDFILE"; exit 0' INT TERM
+log "===== 5gIPC monitor 启动 pid=$$ ====="
+
+while :; do
+    if alive "$RUNDIR/mavfwd.pid"; then
+        : # mavfwd 正常
+    elif wg_ready; then
+        start_mavfwd
+    else
+        log "WG 未就绪, 等待隧道..."
+    fi
+    sleep "$CHECK_INTERVAL"
+done

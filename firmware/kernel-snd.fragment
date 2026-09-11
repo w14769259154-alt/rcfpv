@@ -1,0 +1,8 @@
+# 5gipc-rc 内核片段: USB Audio 编成模块(=m, rootfs 内置, S60sound 开机加载)
+CONFIG_SOUND=m
+CONFIG_SND=m
+CONFIG_SND_TIMER=m
+CONFIG_SND_PCM=m
+CONFIG_SND_HWDEP=m
+CONFIG_SND_RAWMIDI=m
+CONFIG_SND_USB_AUDIO=m

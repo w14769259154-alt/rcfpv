@@ -1,0 +1,25 @@
+#!/bin/sh
+# 5gipc-rc: 开机加载 USB Audio 内核模块(固件内置, 无需 SD 卡)
+### BEGIN INIT INFO
+# Provides:          5gipc-sound
+### END INIT INFO
+
+MODULES="snd-timer snd-pcm snd-hwdep snd-rawmidi snd-usbmidi-lib snd-usb-audio"
+
+case "$1" in
+    start)
+        for m in soundcore snd $MODULES; do
+            modprobe -q "$m" 2>/dev/null || insmod "/lib/modules/$(uname -r)/$(echo $m | tr '-' '_').ko" 2>/dev/null || true
+        done
+        sleep 1
+        if [ -d /proc/asound ]; then
+            echo "sound: OK" > /tmp/log/sound.log
+            cat /proc/asound/cards >> /tmp/log/sound.log 2>&1
+        else
+            echo "sound: 无声卡" > /tmp/log/sound.log
+        fi
+        ;;
+    stop) : ;;
+    *) echo "用法: $0 {start|stop}"; exit 1 ;;
+esac
+exit 0
