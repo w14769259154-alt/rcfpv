@@ -13,6 +13,10 @@ echo "== 声卡状态 =="
 cat /proc/asound/cards 2>&1 || { echo "无 /proc/asound: 先执行 sh load_snd.sh start"; exit 1; }
 ls /dev/snd/ 2>&1
 
+# ALSA 配置: 静态 arecord 运行时需读 alsa.conf(定义 plughw 等), 用 SD 卡上的配置包
+export ALSA_CONFIG_PATH="$AUD_DIR/alsa/alsa.conf"
+export ALSA_CONFIG_DIR="$AUD_DIR/alsa"
+
 # 找第一张卡(card0)
 CARD=$(cat /proc/asound/cards 2>/dev/null | grep -oE "^ *[0-9]+" | head -1 | tr -d ' ')
 [ -n "$CARD" ] || CARD=0

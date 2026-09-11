@@ -107,6 +107,15 @@ make -j"$(nproc)" >/dev/null || make >/dev/null
 cp aplay/aplay "$DIST/arecord" 2>/dev/null || cp aplay/aplay "$DIST/aplay"
 file "$DIST"/* 2>/dev/null || true
 
+# ---------------- 5.5 打包 ALSA 配置文件 ----------------
+# 静态 arecord 运行时仍要读 alsa.conf(定义 plughw 等插件); 设备上设
+#   export ALSA_CONFIG_PATH=$AUD_DIR/alsa/alsa.conf  ALSA_CONFIG_DIR=$AUD_DIR/alsa
+if [ -d "$STAGE/usr/share/alsa" ]; then
+  mkdir -p "$DIST/alsa"
+  cp -r "$STAGE/usr/share/alsa/." "$DIST/alsa/"
+  echo "==> 打包 ALSA 配置 -> $DIST/alsa/"
+fi
+
 # ---------------- 6. 版本信息/vermagic 校验 ----------------
 echo "==> 模块 vermagic(需与设备 insmod 报错对比) ..."
 if command -v modinfo >/dev/null; then
