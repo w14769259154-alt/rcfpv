@@ -16,9 +16,11 @@ mkdir -p "$DIST" "$WORK" "$TC_DIR" "$STAGE"
 
 TOOLCHAIN_URL="https://github.com/openipc/firmware/releases/download/toolchain/toolchain.sigmastar-infinity6e.tgz"
 ALSA_VER="1.2.11"
-ALSA_LIB_URL="https://github.com/alsa-project/alsa-lib/archive/refs/tags/v${ALSA_VER}.tar.gz"
+# 用 ALSA 官方发布包(自带 configure), 避免 GitHub 源码需 autoreconf 的坑
+ALSA_LIB_URL="https://www.alsa-project.org/files/pub/lib/alsa-lib-${ALSA_VER}.tar.bz2"
 OPUS_VER="1.5.2"
-OPUS_URL="https://github.com/xiph/opus/archive/refs/tags/v${OPUS_VER}.tar.gz"
+# opus 官方发布包(自带 configure)
+OPUS_URL="https://downloads.xiph.org/releases/opus/opus-${OPUS_VER}.tar.gz"
 
 echo "==> 构建产物目录: $DIST"
 
@@ -28,7 +30,9 @@ if [ ! -x "$TC_DIR/bin/arm-openipc-linux-gnueabihf-gcc" ]; then
   wget -q "$TOOLCHAIN_URL" -O "$WORK/tc.tgz"
   tar -xzf "$WORK/tc.tgz" -C "$TC_DIR" --strip-components=1
 fi
-export PATH="$TC_DIR/bin:$PATH"
+# 系统 bin 放最前: 工具链自带残缺 autoreconf(缺 Perl 模块)会让 autoreconf/aclocal 崩溃;
+# 交叉编译器用全名调用(arm-openipc-*-gcc), 工具链 bin 保持在 PATH 中即可
+export PATH="/usr/bin:/bin:$TC_DIR/bin:$PATH"
 CROSS="arm-openipc-linux-gnueabihf-"
 "$CROSS"gcc --version | head -1
 
@@ -36,11 +40,10 @@ CROSS="arm-openipc-linux-gnueabihf-"
 if [ ! -f "$STAGE/usr/lib/libasound.a" ]; then
   echo "==> 编译 alsa-lib $ALSA_VER (静态) ..."
   cd "$WORK"
-  wget -q "$ALSA_LIB_URL" -O alsa-lib.tgz
-  tar -xzf alsa-lib.tgz
+  wget -q "$ALSA_LIB_URL" -O alsa-lib.tar.bz2
+  tar -xjf alsa-lib.tar.bz2
   cd alsa-lib-${ALSA_VER}
-  autoreconf -fi
-  ./configure --host="$CROSS" --prefix="$STAGE/usr" \
+  ./configure --host="${CROSS%-}" --prefix="$STAGE/usr" \
     --enable-static --disable-shared --with-pic >/dev/null
   make -j"$(nproc)" >/dev/null && make install >/dev/null
 fi
@@ -49,10 +52,10 @@ fi
 if [ ! -f "$STAGE/usr/lib/libopus.a" ]; then
   echo "==> 编译 opus $OPUS_VER (fixed-point) ..."
   cd "$WORK"
-  wget -q "$OPUS_URL" -O opus.tgz
-  tar -xzf opus.tgz
+  wget -q "$OPUS_URL" -O opus.tar.gz
+  tar -xzf opus.tar.gz
   cd opus-${OPUS_VER}
-  ./configure --host="$CROSS" --prefix="$STAGE/usr" \
+  ./configure --host="${CROSS%-}" --prefix="$STAGE/usr" \
     --enable-static --disable-shared --enable-fixed-point \
     --disable-doc --disable-extra-programs --disable-custom-modes >/dev/null
   make -j"$(nproc)" >/dev/null && make install >/dev/null
