@@ -1,0 +1,113 @@
+#!/bin/bash
+# ============================================================
+# 5gipc-rc: 交叉编译 OpenIPC(ssc338q) USB 声卡内核模块 + 静态 arecord
+# 用法: bash build_snd.sh
+# 产物: dist/  (内核模块 .ko + aplay/arecord + 版本信息)
+# 环境: Ubuntu 22.04+ (GitHub Actions / WSL2 均可)
+# ============================================================
+set -euo pipefail
+
+DIST="$(pwd)/dist"
+WORK="$(pwd)/work"
+TC_DIR="$WORK/toolchain"
+KSRC="$WORK/linux"
+STAGE="$WORK/stage"
+
+mkdir -p "$DIST" "$WORK" "$TC_DIR" "$KSRC" "$STAGE"
+
+# ---------------- 0. 关键变量 ----------------
+KERNEL_TAG="sigmastar-infinity6e"                       # openipc/linux 分支(与固件 4.9.84 对应)
+TOOLCHAIN_URL="https://github.com/openipc/firmware/releases/download/toolchain/toolchain.sigmastar-infinity6e.tgz"
+KERNEL_URL="https://github.com/openipc/linux/archive/refs/tags/${KERNEL_TAG}.tar.gz"
+CONFIG_URL="https://raw.githubusercontent.com/OpenIPC/firmware/master/br-ext-chip-sigmastar/board/infinity6e/infinity6e-ssc012b.config"
+ALSA_VER="1.2.11"
+ALSA_LIB_URL="https://github.com/alsa-project/alsa-lib/archive/refs/tags/v${ALSA_VER}.tar.gz"
+ALSA_UTILS_URL="https://github.com/alsa-project/alsa-utils/archive/refs/tags/v${ALSA_VER}.tar.gz"
+
+echo "==> 构建产物目录: $DIST"
+
+# ---------------- 1. 工具链 ----------------
+if [ ! -x "$TC_DIR/bin/arm-openipc-linux-gnueabihf-gcc" ]; then
+  echo "==> 下载 OpenIPC 工具链 ..."
+  wget -q "$TOOLCHAIN_URL" -O "$WORK/tc.tgz"
+  tar -xzf "$WORK/tc.tgz" -C "$TC_DIR" --strip-components=1
+fi
+export PATH="$TC_DIR/bin:$PATH"
+CROSS="arm-openipc-linux-gnueabihf-"
+"$CROSS"gcc --version | head -1
+
+# ---------------- 2. 内核源码 ----------------
+if [ ! -f "$KSRC/Makefile" ]; then
+  echo "==> 下载内核源码 $KERNEL_TAG ..."
+  wget -q "$KERNEL_URL" -O "$WORK/linux.tar.gz"
+  tar -xzf "$WORK/linux.tar.gz" -C "$KSRC" --strip-components=1
+fi
+
+# ---------------- 3. 内核配置: 追加 USB Audio ----------------
+echo "==> 生成内核配置 ..."
+wget -q "$CONFIG_URL" -O "$KSRC/.config"
+cd "$KSRC"
+# 用 scripts/config 追加(正确处理重复行/依赖)
+./scripts/config \
+  --module SOUND \
+  --module SND \
+  --module SND_TIMER \
+  --module SND_PCM \
+  --module SND_HWDEP \
+  --module SND_RAWMIDI \
+  --module SND_USB_AUDIO
+# 确认
+grep -E "CONFIG_SOUND|CONFIG_SND=|CONFIG_SND_USB_AUDIO" .config || true
+
+echo "==> olddefconfig ..."
+make ARCH=arm olddefconfig >/dev/null 2>&1 || make ARCH=arm olddefconfig
+
+# ---------------- 4. 编译内核模块 ----------------
+echo "==> modules_prepare ..."
+make ARCH=arm CROSS_COMPILE="$CROSS" modules_prepare -j"$(nproc)" >/dev/null
+echo "==> modules (只编 =m 的音频相关) ..."
+make ARCH=arm CROSS_COMPILE="$CROSS" modules -j"$(nproc)"
+
+echo "==> 收集 .ko ..."
+KO_LIST="soundcore.ko snd.ko snd-timer.ko snd-pcm.ko snd-hwdep.ko snd-rawmidi.ko snd-usb-audio.ko"
+for k in $KO_LIST; do
+  f=$(find "$KSRC/sound" -name "$k" | head -1)
+  if [ -n "$f" ]; then cp "$f" "$DIST/"; echo "  + $k"; else echo "  !! 缺少 $k"; fi
+done
+
+# ---------------- 5. 交叉编译静态 arecord ----------------
+echo "==> 编译 alsa-lib (静态) ..."
+cd "$WORK"
+wget -q "$ALSA_LIB_URL" -O alsa-lib.tgz
+tar -xzf alsa-lib.tgz
+cd alsa-lib-${ALSA_VER}
+./configure --host="$CROSS" --prefix="$STAGE/usr" \
+  --enable-static --disable-shared --with-pic >/dev/null
+make -j"$(nproc)" >/dev/null && make install >/dev/null
+
+echo "==> 编译 alsa-utils (仅 aplay/arecord, 静态) ..."
+cd "$WORK"
+wget -q "$ALSA_UTILS_URL" -O alsa-utils.tgz
+tar -xzf alsa-utils.tgz
+cd alsa-utils-${ALSA_VER}
+export PKG_CONFIG_PATH="$STAGE/usr/lib/pkgconfig"
+./configure --host="$CROSS" --prefix="$STAGE/usr" \
+  --disable-alsaconf --disable-alsactl --disable-alsaloop \
+  --disable-alsamixer --disable-alsaucm --disable-amixer \
+  --disable-speaker-test --disable-bat --disable-xmlto --disable-nls \
+  --disable-alsatplg --disable-topology \
+  --with-alsa-inc-prefix="$STAGE/usr/include" \
+  --with-alsa-prefix="$STAGE/usr/lib" \
+  LDFLAGS="-static" >/dev/null
+make -j"$(nproc)" >/dev/null || make >/dev/null
+cp aplay/aplay "$DIST/arecord" 2>/dev/null || cp aplay/aplay "$DIST/aplay"
+file "$DIST"/* 2>/dev/null || true
+
+# ---------------- 6. 版本信息/vermagic 校验 ----------------
+echo "==> 模块 vermagic(需与设备 insmod 报错对比) ..."
+if command -v modinfo >/dev/null; then
+  modinfo "$DIST/snd-usb-audio.ko" 2>/dev/null | grep -E "vermagic|filename" || true
+fi
+echo "==> 产物: $DIST"
+ls -la "$DIST"
+echo "完成。把 dist/ 整个目录传到设备 SD 卡, 执行 load_snd.sh start"
